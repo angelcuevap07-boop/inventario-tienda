@@ -23,7 +23,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- CONEXIÓN ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+conn = st.connection("gsheets", type=GSheetsConnection, ttl=0)
 
 def cargar_datos():
     data = conn.read()
@@ -88,3 +88,4 @@ else:
 if st.sidebar.button("🔄 Sincronizar"):
     st.cache_data.clear()
     st.rerun()
+
