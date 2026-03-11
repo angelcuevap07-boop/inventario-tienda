@@ -69,11 +69,18 @@ for idx, row in df_edit.iterrows():
         df.at[idx, 'stock'] = int(row['stock']) + ajuste
         
         # ACTUALIZAMOS EL EXCEL
-        conn.update(data=df)
-        st.success("¡Stock actualizado!")
-        st.cache_data.clear()
-        st.rerun()
+try:
+            conn.update(
+                worksheet="Hoja 1", # <--- REVISA SI TU HOJA SE LLAMA 'Hoja 1' o 'Sheet1'
+                data=df
+            )
+            st.success(f"✅ ¡Stock actualizado! {row['color']} ahora tiene {nuevo_stock}")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al guardar: {e}")
 
 if st.button("🔄 Sincronizar"):
     st.cache_data.clear()
     st.rerun()
+
