@@ -41,17 +41,17 @@ try:
     }
     
     # Creamos la conexión pasando el diccionario de credenciales directamente
-    conn = st.connection("gsheets", type=GSheetsConnection, **creds)
+    conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Función para leer datos siempre frescos
     def cargar_datos():
-        data = conn.read(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], ttl=0)
+        # Usamos el link del excel que está en los secrets
+        data = conn.read(ttl=0)
         data.columns = data.columns.str.strip().str.lower()
         return data
 
     df = cargar_datos()
 except Exception as e:
-    st.error(f"Error de conexión: {e}")
+    st.error(f"Error de configuración: {e}")
     st.stop()
 
 # --- 3. MENÚ LATERAL ---
@@ -106,3 +106,4 @@ if len(prendas) > 0:
                 st.error(f"Error al guardar: {err}")
 else:
     st.warning("Sin datos.")
+
