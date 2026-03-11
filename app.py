@@ -2,9 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Gestión Inventario UCSUR", layout="wide")
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(page_title="Inventario Tiendas", layout="wide")
 
-# LOGIN
+# --- LOGIN ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -18,20 +19,20 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
-                st.error("Error")
+                st.error("Credenciales incorrectas")
     st.stop()
 
-# CONEXIÓN
+# --- CONEXIÓN ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def cargar():
+def cargar_datos():
     data = conn.read()
     data.columns = data.columns.str.strip().str.lower()
     return data
 
-df = cargar()
+df = cargar_datos()
 
-# SIDEBAR
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.title("🛍️ Menú")
     locales = sorted(df['local'].unique())
@@ -42,45 +43,48 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
 
-# CUERPO
+# --- CUERPO PRINCIPAL ---
 st.header(f"Stock en {local_sel} - {tela_sel}")
 df_f = df[(df['local'] == local_sel) & (df['tela'] == tela_sel)]
 prendas = sorted(df_f['prenda'].unique())
-prenda_sel = st.selectbox("👕 Prenda:", prendas)
 
-df_p = df_f[df_f['prenda'] == prenda_sel]
-talla_sel = st.radio("📏 Talla:", sorted(df_p['talla'].unique()), horizontal=True)
+if len(prendas) > 0:
+    prenda_sel = st.selectbox("👕 Prenda:", prendas)
+    df_p = df_f[df_f['prenda'] == prenda_sel]
+    talla_sel = st.radio("📏 Talla:", sorted(df_p['talla'].unique()), horizontal=True)
 
-st.divider()
+    st.divider()
 
-# TABLA DE EDICIÓN
-df_edit = df_p[df_p['talla'] == talla_sel]
+    # Filtramos la fila para editar
+    df_edit = df_p[df_p['talla'] == talla_sel]
 
-for idx, row in df_edit.iterrows():
-    c1, c2, c3, c4 = st.columns([2,1,2,1])
-    c1.subheader(row['color'].upper())
-    c2.metric("Stock", int(row['stock']))
-    
-    # El usuario pone cuanto vendió o cuanto llegó
-    ajuste = c3.number_input(f"Ajuste {row['color']}", value=0, key=f"in_{idx}")
-    
-    if c4.button("Guardar", key=f"btn_{idx}"):
-        # Buscamos la fila exacta en el DF original (usando el índice) para actualizar
-        df.at[idx, 'stock'] = int(row['stock']) + ajuste
+    for idx, row in df_edit.iterrows():
+        c1, c2, c3, c4 = st.columns([2, 1, 2, 1])
+        c1.subheader(row['color'].upper())
+        c2.metric("Stock", int(row['stock']))
         
-        # ACTUALIZAMOS EL EXCEL
-try:
-            conn.update(
-                worksheet="Hoja 1", # <--- REVISA SI TU HOJA SE LLAMA 'Hoja 1' o 'Sheet1'
-                data=df
-            )
-            st.success(f"✅ ¡Stock actualizado! {row['color']} ahora tiene {nuevo_stock}")
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error al guardar: {e}")
+        # Entrada de ajuste
+        ajuste = c3.number_input(f"Ajuste {row['color']}", value=0, key=f"in_{idx}")
+        
+        if c4.button("Guardar", key=f"btn_{idx}"):
+            # Calculamos nuevo stock
+            nuevo_valor = int(row['stock']) + ajuste
+            # Actualizamos el DataFrame original
+            df.at[idx, 'stock'] = nuevo_valor
+            
+            # INTENTAR GUARDAR EN EXCEL
+            try:
+                # IMPORTANTE: Revisa si tu hoja se llama 'Sheet1' o 'Hoja 1'
+                conn.update(worksheet="Sheet1", data=df)
+                st.success(f"¡Actualizado! Nuevo stock: {nuevo_valor}")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al guardar: {e}")
+else:
+    st.warning("No hay prendas en esta categoría.")
 
-if st.button("🔄 Sincronizar"):
+# Botón manual de refresco
+if st.sidebar.button("🔄 Sincronizar"):
     st.cache_data.clear()
     st.rerun()
-
