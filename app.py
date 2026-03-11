@@ -3,9 +3,8 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # 1. CONFIGURACIÓN
-st.set_page_config(page_title="Inventario Tiendas - Guizado & Moda", layout="wide")
+st.set_page_config(page_title="Inventario - Guizado & Moda", layout="wide")
 
-# --- LOGIN ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -27,18 +26,14 @@ if not st.session_state.logged_in:
 # --- 2. CONEXIÓN ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    
     def cargar_datos():
         url = st.secrets["connections"]["gsheets"]["spreadsheet"]
         data = conn.read(spreadsheet=url, ttl=0)
         data.columns = data.columns.str.strip().str.lower()
-        
-        # Asegurar columnas numéricas
         for col in ['stock', 'precio_unidad', 'precio_mayor']:
             if col in data.columns:
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
         return data
-
     df = cargar_datos()
 except Exception as e:
     st.error(f"Error de conexión: {e}")
@@ -46,66 +41,89 @@ except Exception as e:
 
 # --- 3. MENÚ LATERAL ---
 with st.sidebar:
-    st.title("🛍️ Panel Control")
-    local_sel = st.selectbox("📍 Selecciona Local:", sorted(df['local'].unique()))
-    df_local = df[df['local'] == local_sel]
-    
-    tela_sel = st.selectbox("🧶 Tipo de Tela:", sorted(df_local['tela'].unique()))
+    st.title("🛍️ Gestión de Tienda")
+    modo = st.radio("Acción:", ["📦 Ver/Editar Stock", "🚚 Realizar Traslado"])
     st.divider()
     if st.button("🚪 Cerrar Sesión"):
         st.session_state.logged_in = False
         st.rerun()
 
-# --- 4. GESTIÓN Y RESUMEN ---
-st.header(f"📍 {local_sel} | {tela_sel}")
-
-df_prenda_list = df_local[df_local['tela'] == tela_sel]
-prendas = sorted(df_prenda_list['prenda'].unique())
-
-if prendas:
-    prenda_sel = st.selectbox("👕 Selecciona Modelo:", prendas)
-    df_modelo = df_prenda_list[df_prenda_list['prenda'] == prenda_sel]
+# --- 4. MODO: EDITAR STOCK ---
+if modo == "📦 Ver/Editar Stock":
+    local_sel = st.selectbox("📍 Selecciona Local:", sorted(df['local'].unique()))
+    df_local = df[df['local'] == local_sel]
+    tela_sel = st.selectbox("🧶 Tipo de Tela:", sorted(df_local['tela'].unique()))
     
-    # --- BLOQUE DE RESUMEN TOTAL (Lo que pediste) ---
-    st.subheader("📊 Resumen del Modelo")
-    total_stock_modelo = int(df_modelo['stock'].sum())
-    # Calculamos el valor total basado en precio_unidad
-    valor_total_stock = (df_modelo['stock'] * df_modelo['precio_unidad']).sum()
-    
-    res1, res2, res3 = st.columns(3)
-    res1.metric("Stock Total (Todas las tallas)", total_stock_modelo)
-    res2.metric("Valor del Inventario", f"S/ {valor_total_stock:,.2f}")
-    res3.write("**Tallas disponibles:** " + ", ".join(df_modelo['talla'].unique()))
-    
-    st.divider()
+    st.header(f"📍 {local_sel} | {tela_sel}")
+    prendas = sorted(df_local[df_local['tela'] == tela_sel]['prenda'].unique())
 
-    # --- EDICIÓN POR TALLA ---
-    talla_sel = st.radio("📏 Selecciona Talla para modificar:", sorted(df_modelo['talla'].unique()), horizontal=True)
-    df_final = df_modelo[df_modelo['talla'] == talla_sel]
+    if prendas:
+        prenda_sel = st.selectbox("👕 Modelo:", prendas)
+        df_modelo = df_local[(df_local['tela'] == tela_sel) & (df_local['prenda'] == prenda_sel)]
+        
+        # Resumen
+        st.subheader("📊 Resumen del Modelo")
+        c_res1, c_res2 = st.columns(2)
+        c_res1.metric("Stock Total", int(df_modelo['stock'].sum()))
+        c_res2.write("**Tallas:** " + ", ".join(df_modelo['talla'].unique()))
+        
+        st.divider()
+        talla_sel = st.radio("📏 Talla:", sorted(df_modelo['talla'].unique()), horizontal=True)
+        df_final = df_modelo[df_modelo['talla'] == talla_sel]
 
-    for idx, row in df_final.iterrows():
-        c1, c2, c3, c4 = st.columns([2, 1, 2, 1])
-        
-        with c1:
-            st.markdown(f"### Color: {row['color'].upper()}")
-            st.caption(f"Precio: S/ {row['precio_unidad']}")
-        
-        c2.metric("Stock Actual", int(row['stock']))
-        
-        ajuste = c3.number_input(f"Venta/Ingreso ({row['color']})", value=0, step=1, key=f"in_{idx}")
-        
-        if c4.button("Actualizar", key=f"btn_{idx}"):
-            nuevo_valor = int(row['stock']) + ajuste
-            if nuevo_valor < 0:
-                st.error("El stock no puede ser menor a 0")
-            else:
-                df.at[idx, 'stock'] = nuevo_valor
-                try:
-                    conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
-                    st.success("¡Datos guardados!")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as err:
-                    st.error(f"Error: {err}")
+        for idx, row in df_final.iterrows():
+            col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
+            col1.write(f"**Color: {row['color'].upper()}**")
+            col2.metric("Stock", int(row['stock']))
+            ajuste = col3.number_input("Ajuste (+/-)", value=0, step=1, key=f"adj_{idx}")
+            if col4.button("OK", key=f"btn_{idx}"):
+                df.at[idx, 'stock'] = int(row['stock']) + ajuste
+                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
+                st.success("Actualizado")
+                st.cache_data.clear()
+                st.rerun()
+
+# --- 5. MODO: TRASLADO (Lo nuevo) ---
 else:
-    st.warning("No hay productos registrados en este local/tela.")
+    st.header("🚚 Traslado de Mercadería")
+    col_a, col_b = st.columns(2)
+    
+    origen = col_a.selectbox("Desde:", sorted(df['local'].unique()), key="origen")
+    destino = col_b.selectbox("Hacia:", [l for l in sorted(df['local'].unique()) if l != origen], key="destino")
+    
+    # Seleccionar qué mover
+    df_origen = df[df['local'] == origen]
+    prenda_t = st.selectbox("Producto a trasladar:", sorted(df_origen['prenda'].unique()))
+    
+    df_prenda_t = df_origen[df_origen['prenda'] == prenda_t]
+    talla_t = st.selectbox("Talla:", sorted(df_prenda_t['talla'].unique()))
+    color_t = st.selectbox("Color:", sorted(df_prenda_t[df_prenda_t['talla'] == talla_t]['color'].unique()))
+    
+    # Obtener stock actual en origen
+    fila_origen = df[(df['local'] == origen) & (df['prenda'] == prenda_t) & (df['talla'] == talla_t) & (df['color'] == color_t)]
+    stock_disp = int(fila_origen['stock'].values[0])
+    
+    st.warning(f"Stock disponible en {origen}: {stock_disp}")
+    cantidad = st.number_input("Cantidad a mover:", min_value=1, max_value=stock_disp, step=1)
+    
+    if st.button("Confirmar Traslado"):
+        # 1. Restar de origen
+        idx_origen = fila_origen.index[0]
+        
+        # 2. Sumar en destino (buscamos si existe la fila en destino)
+        fila_destino = df[(df['local'] == destino) & (df['prenda'] == prenda_t) & (df['talla'] == talla_t) & (df['color'] == color_t)]
+        
+        if not fila_destino.empty:
+            idx_destino = fila_destino.index[0]
+            df.at[idx_origen, 'stock'] -= cantidad
+            df.at[idx_destino, 'stock'] += cantidad
+            
+            try:
+                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
+                st.success(f"✅ ¡Traslado exitoso! Se movieron {cantidad} {prenda_t} de {origen} a {destino}.")
+                st.cache_data.clear()
+                # st.rerun() # Opcional para refrescar
+            except Exception as e:
+                st.error(f"Error al procesar: {e}")
+        else:
+            st.error(f"El producto no existe en el local de destino ({destino}). Primero créalo en el Excel.")
