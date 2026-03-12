@@ -32,13 +32,11 @@ try:
         data = conn.read(spreadsheet=url, ttl=0)
         data.columns = data.columns.str.strip().str.lower()
         
-        # Mapeo para evitar errores de nombres en el Excel
         mapeo = {
             'precio unidad': 'precio_unitario',
             'precio_unidad': 'precio_unitario',
             'precio mayor': 'precio_mayorista',
-            'precio_mayor': 'precio_mayorista',
-            'precio_mayorista': 'precio_mayorista'
+            'precio_mayor': 'precio_mayorista'
         }
         data = data.rename(columns=mapeo)
         
@@ -59,7 +57,7 @@ except Exception as e:
 with st.sidebar:
     st.title("🛍️ Panel Control")
     modo = st.radio("Menú:", ["📦 Ver/Editar Stock", "🚚 Traslado por Voz", "🏭 Gestión Taller"])
-    if st.button("🚪 Cerrar Sesión"):
+    if st.button("🚪 Salir"):
         st.session_state.logged_in = False
         st.rerun()
 
@@ -78,7 +76,7 @@ if modo == "📦 Ver/Editar Stock":
             c1, c2, c3 = st.columns([3, 1, 1])
             c1.write(f"**{row['color'].upper()}** (S/{row['precio_unitario']})")
             c2.metric("Stock", int(row['stock']))
-            adj = c3.number_input("Venta/Ajuste", value=0, key=f"v_{idx}")
+            adj = c3.number_input("Ajuste", value=0, key=f"v_{idx}")
             if st.button("Guardar", key=f"b_{idx}"):
                 df.at[idx, 'stock'] += adj
                 conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
@@ -91,12 +89,10 @@ if modo == "📦 Ver/Editar Stock":
 # --- 5. MODO: TRASLADO POR VOZ ---
 elif modo == "🚚 Traslado por Voz":
     st.header("🚚 Traslado con Micrófono")
-    # BOTÓN DE MICRÓFONO
     audio = mic_recorder(start_prompt="🎤 Toca para hablar", stop_prompt="🛑 Parar", key='rec')
     voz = audio['text'].lower() if audio else ""
     if voz: st.info(f"Escuché: {voz}")
 
-    # Lógica de autocompletado inteligente
     s_orig, s_dest, s_prenda, s_talla, s_color, s_cant = None, None, None, None, None, 1
     if voz:
         for l in df['local'].unique():
@@ -124,5 +120,42 @@ elif modo == "🚚 Traslado por Voz":
         df_p = df_o[df_o['prenda'] == p_t]
         t_t = st.selectbox("Talla:", sorted(df_p['talla'].unique()), 
                            index=sorted(df_p['talla'].unique()).index(s_talla) if s_talla in df_p['talla'].unique() else 0)
-        c_t = st.selectbox("Color:", sorted(df_p[df_p['talla'] == t_t]['color'].unique()), 
-                           index=sorted(df_p[df_p['talla'] == t_t]['color'].unique()).index(s_color) if s_color in df_
+        
+        # AQUÍ ESTABA EL ERROR DE PARÉNTESIS CORREGIDO:
+        lista_colores = sorted(df_p[df_p['talla'] == t_t]['color'].unique())
+        c_t = st.selectbox("Color:", lista_colores, 
+                           index=lista_colores.index(s_color) if s_color in lista_colores else 0)
+        
+        f_o = df_p[(df_p['talla'] == t_t) & (df_p['color'] == c_t)].iloc[0]
+        cant = st.number_input("Cantidad:", min_value=1, max_value=int(f_o['stock']), value=min(s_cant, int(f_o['stock'])))
+        
+        if st.button("Confirmar Traslado"):
+            df.at[f_o.name, 'stock'] -= cant
+            idx_d = df[(df['local'] == destino) & (df['prenda'] == p_t) & (df['talla'] == t_t) & (df['color'] == c_t)].index
+            if not idx_d.empty:
+                df.at[idx_d[0], 'stock'] += cant
+            else:
+                nueva = {'local': destino, 'tela': f_o['tela'], 'prenda': p_t, 'talla': t_t, 'color': c_t, 'stock': cant, 'precio_unitario': f_o['precio_unitario'], 'precio_mayorista': f_o['precio_mayorista']}
+                df = pd.concat([df, pd.DataFrame([nueva])], ignore_index=True)
+            conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
+            st.success("Traslado exitoso")
+            st.cache_data.clear()
+            st.rerun()
+    else:
+        st.error("El origen no tiene mercadería disponible.")
+
+# --- 6. GESTIÓN TALLER ---
+else:
+    st.header("🏭 Gestión Producción Taller")
+    tab1, tab2 = st.tabs(["📥 Agregar Stock", "➕ Nuevo Modelo"])
+    with tab1:
+        df_t = df[df['local'] == "Taller"]
+        if not df_t.empty:
+            p = st.selectbox("Modelo:", sorted(df_t['prenda'].unique()))
+            t = st.selectbox("Talla:", sorted(df_t[df_t['prenda'] == p]['talla'].unique()))
+            c = st.selectbox("Color:", sorted(df_t[(df_t['prenda'] == p) & (df_t['talla'] == t)]['color'].unique()))
+            n = st.number_input("Cantidad Producida:", min_value=1, value=12)
+            if st.button("Sumar al Taller"):
+                idx = df[(df['local'] == "Taller") & (df['prenda'] == p) & (df['talla'] == t) & (df['color'] == c)].index[0]
+                df.at[idx, 'stock'] += n
+                conn.
