@@ -121,7 +121,6 @@ elif modo == "🚚 Traslado por Voz":
         t_t = st.selectbox("Talla:", sorted(df_p['talla'].unique()), 
                            index=sorted(df_p['talla'].unique()).index(s_talla) if s_talla in df_p['talla'].unique() else 0)
         
-        # AQUÍ ESTABA EL ERROR DE PARÉNTESIS CORREGIDO:
         lista_colores = sorted(df_p[df_p['talla'] == t_t]['color'].unique())
         c_t = st.selectbox("Color:", lista_colores, 
                            index=lista_colores.index(s_color) if s_color in lista_colores else 0)
@@ -158,4 +157,25 @@ else:
             if st.button("Sumar al Taller"):
                 idx = df[(df['local'] == "Taller") & (df['prenda'] == p) & (df['talla'] == t) & (df['color'] == c)].index[0]
                 df.at[idx, 'stock'] += n
-                conn.
+                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
+                st.success("Stock añadido")
+                st.cache_data.clear()
+                st.rerun()
+    with tab2:
+        with st.form("n"):
+            c1, c2 = st.columns(2)
+            np = c1.text_input("Nombre Prenda").upper()
+            nt = c2.text_input("Tela", value="General")
+            c3, c4 = st.columns(2)
+            nta = c3.selectbox("Talla", ["ST", "S", "M", "L", "S/M"])
+            nc = c4.text_input("Color").upper()
+            c5, c6 = st.columns(2)
+            ns = c5.number_input("Stock Inicial", min_value=1)
+            pu = c6.number_input("Precio Unidad", min_value=0.0)
+            if st.form_submit_button("Crear Prenda"):
+                nf = {'local': 'Taller', 'tela': nt, 'prenda': np, 'talla': nta, 'color': nc, 'stock': ns, 'precio_unitario': pu, 'precio_mayorista': 0}
+                df = pd.concat([df, pd.DataFrame([nf])], ignore_index=True)
+                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=df)
+                st.success("Nueva prenda creada")
+                st.cache_data.clear()
+                st.rerun()
