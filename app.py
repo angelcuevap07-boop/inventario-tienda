@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-from streamlit_mic_recorder import mic_recorder
 import pandas as pd
 import re
 
@@ -32,7 +31,6 @@ try:
         data = conn.read(spreadsheet=url, ttl=0)
         data.columns = data.columns.str.strip().str.lower()
         
-        # Diccionario de corrección de nombres de columnas
         mapeo = {
             'precio unidad': 'precio_unitario',
             'precio_unidad': 'precio_unitario',
@@ -51,13 +49,13 @@ try:
 
     df = cargar_datos()
 except Exception as e:
-    st.error(f"Error cargando datos del Excel: {e}")
+    st.error(f"Error cargando datos: {e}")
     st.stop()
 
 # --- 3. MENÚ ---
 with st.sidebar:
     st.title("🛍️ Panel Control")
-    modo = st.radio("Menú:", ["📦 Ver/Editar Stock", "🚚 Traslado por Voz", "🏭 Gestión Taller"])
+    modo = st.radio("Menú:", ["📦 Ver/Editar Stock", "🚚 Traslados Rápidos", "🏭 Gestión Taller"])
     if st.button("🚪 Salir"):
         st.session_state.logged_in = False
         st.rerun()
@@ -87,12 +85,12 @@ if modo == "📦 Ver/Editar Stock":
     else:
         st.warning("No hay stock disponible en este local.")
 
-# --- 5. MODO: TRASLADO POR VOZ ---
-elif modo == "🚚 Traslado por Voz":
-    st.header("🚚 Traslado con Micrófono")
-    audio = mic_recorder(start_prompt="🎤 Toca para hablar", stop_prompt="🛑 Parar", key='rec')
-    voz = audio['text'].lower() if audio else ""
-    if voz: st.info(f"Escuché: {voz}")
+# --- 5. MODO: TRASLADOS RÁPIDOS (CON AUTOCOMPLETADO POR TEXTO) ---
+elif modo == "🚚 Traslados Rápidos":
+    st.header("🚚 Traslado Inteligente")
+    st.info("💡 Escribe la instrucción o usa el dictado de tu celular. Ejemplo: 'De taller a moda palazo talla ST negro 5'")
+    
+    voz = st.text_input("Instrucción rápida:").lower()
 
     s_orig, s_dest, s_prenda, s_talla, s_color, s_cant = None, None, None, None, None, 1
     if voz:
@@ -108,6 +106,7 @@ elif modo == "🚚 Traslado por Voz":
         n = re.findall(r'\d+', voz)
         if n: s_cant = int(n[-1])
 
+    st.divider()
     col1, col2 = st.columns(2)
     lista_locales = sorted(df['local'].unique())
     origen = col1.selectbox("Desde:", lista_locales, 
